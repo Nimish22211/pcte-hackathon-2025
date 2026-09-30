@@ -82,14 +82,26 @@ export const NotificationProvider = ({ children }) => {
       })
     })
 
+    // Reconnect so the server knows who this socket belongs to (needed for private rooms)
+    socketService.reconnect()
+
     // Join user-specific notification room
     socketService.emit('join-room', `user-${user.id}`)
+
+    // Admins and officials are notified when new issues are reported
+    const isStaff = user.role === 'admin' || user.role === 'official'
+    if (isStaff) {
+      socketService.emit('join-room', 'admin-notifications')
+    }
 
     return () => {
       socketService.off('notification')
       socketService.emit('leave-room', `user-${user.id}`)
+      if (isStaff) {
+        socketService.emit('leave-room', 'admin-notifications')
+      }
     }
-  }, [user])
+  }, [user?.id, user?.role])
 
   const getNotificationIcon = (type) => {
     switch (type) {

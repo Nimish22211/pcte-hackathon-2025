@@ -1,9 +1,8 @@
 import axios from 'axios'
+import { auth } from '../lib/firebase'
 
 // API Configuration with fallback
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
-
-console.log('🔗 API Base URL:', API_BASE_URL)
 
 const apiService = axios.create({
   baseURL: API_BASE_URL,
@@ -13,11 +12,12 @@ const apiService = axios.create({
   },
 })
 
-// Request interceptor to add auth token
+// Request interceptor to add the Firebase ID token (refreshed automatically by the SDK)
 apiService.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('token')
-    if (token) {
+  async (config) => {
+    await auth.authStateReady()
+    if (auth.currentUser) {
+      const token = await auth.currentUser.getIdToken()
       config.headers.Authorization = `Bearer ${token}`
     }
     return config
@@ -30,10 +30,13 @@ apiService.interceptors.request.use(
 // Response interceptor to handle auth errors
 apiService.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('token')
-      window.location.href = '/login'
+  async (error) => {
+    const isProfileCheck = error.config?.url === '/auth/me' // handled by AuthContext
+    if (error.response?.status === 401 && !isProfileCheck) {
+      await auth.signOut()
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login'
+      }
     }
     return Promise.reject(error)
   }

@@ -25,6 +25,8 @@ const issueReducer = (state, action) => {
     case 'SET_ISSUES':
       return { ...state, issues: action.payload, loading: false }
     case 'ADD_ISSUE':
+      // The creator receives the issue from both the API response and the socket event
+      if (state.issues.some(issue => issue.id === action.payload.id)) return state
       return { ...state, issues: [action.payload, ...state.issues] }
     case 'UPDATE_ISSUE':
       return {
@@ -142,7 +144,7 @@ export const IssueProvider = ({ children }) => {
       })
       dispatch({ type: 'UPDATE_ISSUE', payload: response.data })
       toast.success('Issue status updated successfully!')
-      return { success: true }
+      return { success: true, issue: response.data }
     } catch (error) {
       const message = error.response?.data?.error || 'Failed to update issue status'
       toast.error(message)
@@ -157,9 +159,24 @@ export const IssueProvider = ({ children }) => {
       })
       dispatch({ type: 'UPDATE_ISSUE', payload: response.data })
       toast.success('Issue assigned successfully!')
-      return { success: true }
+      return { success: true, issue: response.data }
     } catch (error) {
       const message = error.response?.data?.error || 'Failed to assign issue'
+      toast.error(message)
+      return { success: false, error: message }
+    }
+  }
+
+  const assignServiceman = async (id, servicemanId) => {
+    try {
+      const response = await apiService.put(`/issues/${id}/assign-serviceman`, {
+        serviceman_id: servicemanId
+      })
+      dispatch({ type: 'UPDATE_ISSUE', payload: response.data })
+      toast.success('Serviceman assigned successfully!')
+      return { success: true, issue: response.data }
+    } catch (error) {
+      const message = error.response?.data?.error || 'Failed to assign serviceman'
       toast.error(message)
       return { success: false, error: message }
     }
@@ -177,16 +194,14 @@ export const IssueProvider = ({ children }) => {
     }
   }
 
+  // Returns the issues assigned to the user (as official or serviceman) without touching the shared issue list
   const fetchAssignedIssues = async (officialId) => {
     try {
-      dispatch({ type: 'SET_LOADING', payload: true })
       const response = await apiService.get(`/issues/assigned/${officialId}`)
-      dispatch({ type: 'SET_ISSUES', payload: response.data })
       return response.data
     } catch (error) {
       console.error('Error fetching assigned issues:', error)
       toast.error('Failed to fetch assigned issues')
-      dispatch({ type: 'SET_LOADING', payload: false })
       return []
     }
   }
@@ -220,7 +235,7 @@ export const IssueProvider = ({ children }) => {
     } catch (error) {
       console.error('Error fetching official stats:', error)
       toast.error('Failed to fetch official statistics')
-      return { pending: 0, inProgress: 0, resolvedThisWeek: 0 }
+      return { pending: 0, needsServiceman: 0, inProgress: 0, awaitingVerification: 0, resolvedThisWeek: 0 }
     }
   }
 
@@ -239,6 +254,7 @@ export const IssueProvider = ({ children }) => {
     createIssue,
     updateIssueStatus,
     assignIssue,
+    assignServiceman,
     fetchAnalytics,
     fetchAssignedIssues,
     fetchIssueHistory,

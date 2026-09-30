@@ -1,17 +1,20 @@
 import { io } from 'socket.io-client'
+import { auth } from '../lib/firebase'
 
 class SocketService {
   constructor() {
     this.socket = null
     this.connected = false
+    this.rooms = new Set()
   }
 
   connect() {
-    if (this.socket && this.connected) {
+    if (this.socket) {
       return this.socket
     }
 
-    const serverUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000'
+    // VITE_API_URL ends with /api, but Socket.IO must connect to the server root
+    const serverUrl = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace(/\/api\/?$/, '')
     
     this.socket = io(serverUrl, {
       transports: ['websocket', 'polling'],
@@ -19,13 +22,25 @@ class SocketService {
       forceNew: true,
       reconnection: true,
       reconnectionDelay: 1000,
-      reconnectionAttempts: 5,
-      maxReconnectionAttempts: 5
+      reconnectionDelayMax: 10000,
+      reconnectionAttempts: Infinity,
+      // Evaluated on every (re)connect so the server can tell who is connected
+      auth: async (callback) => {
+        try {
+          await auth.authStateReady()
+          const token = auth.currentUser ? await auth.currentUser.getIdToken() : null
+          callback({ token })
+        } catch (error) {
+          callback({ token: null })
+        }
+      }
     })
 
     this.socket.on('connect', () => {
       console.log('✅ Connected to Socket.IO server')
       this.connected = true
+      // (Re)join rooms requested before the connection was ready or lost on reconnect
+      this.rooms.forEach((room) => this.socket.emit('join-room', room))
     })
 
     this.socket.on('disconnect', (reason) => {
@@ -50,6 +65,15 @@ class SocketService {
     return this.socket
   }
 
+  // Reconnect on the same socket (listeners are kept) so the server sees the current login
+  reconnect() {
+    if (this.socket) {
+      this.connected = false
+      this.socket.disconnect()
+      this.socket.connect()
+    }
+  }
+
   disconnect() {
     if (this.socket) {
       this.socket.disconnect()
@@ -60,9 +84,16 @@ class SocketService {
   }
 
   emit(event, data) {
+    // Remember rooms so they are joined as soon as the socket is connected
+    if (event === 'join-room') {
+      this.rooms.add(data)
+    } else if (event === 'leave-room') {
+      this.rooms.delete(data)
+    }
+
     if (this.socket && this.connected) {
       this.socket.emit(event, data)
-    } else {
+    } else if (event !== 'join-room' && event !== 'leave-room') {
       console.warn('⚠️ Socket not connected, cannot emit event:', event)
     }
   }

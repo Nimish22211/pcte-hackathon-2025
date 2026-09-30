@@ -19,8 +19,8 @@ export function Header() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
 
-  const handleLogout = () => {
-    logout()
+  const handleLogout = async () => {
+    await logout()
     navigate('/')
   }
 
@@ -44,13 +44,9 @@ export function Header() {
       <div className="flex items-center justify-between px-6 py-4">
         <div className="flex items-center space-x-2">
           <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-            <span className="text-primary-foreground font-bold text-sm">'
-           <Link to="/">
-              
-              UP
-           </Link>
-              
-              </span>
+            <span className="text-primary-foreground font-bold text-sm">
+              <Link to="/">UP</Link>
+            </span>
           </div>
           <span className="text-xl font-bold text-foreground">
            <Link to="/">

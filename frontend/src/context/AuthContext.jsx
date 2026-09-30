@@ -1,4 +1,6 @@
 import { createContext, useContext, useReducer, useEffect } from 'react'
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth'
+import { auth } from '../lib/firebase'
 import { apiService } from '../services/apiService'
 import toast from 'react-hot-toast'
 
@@ -6,7 +8,6 @@ const AuthContext = createContext()
 
 const initialState = {
   user: null,
-  token: localStorage.getItem('token'),
   isAuthenticated: false,
   loading: true
 }
@@ -19,7 +20,6 @@ const authReducer = (state, action) => {
       return {
         ...state,
         user: action.payload.user,
-        token: action.payload.token,
         isAuthenticated: true,
         loading: false
       }
@@ -27,7 +27,6 @@ const authReducer = (state, action) => {
       return {
         ...state,
         user: null,
-        token: null,
         isAuthenticated: false,
         loading: false
       }
@@ -35,7 +34,6 @@ const authReducer = (state, action) => {
       return {
         ...state,
         user: null,
-        token: null,
         isAuthenticated: false,
         loading: false
       }
@@ -49,63 +47,80 @@ const authReducer = (state, action) => {
   }
 }
 
+const getRedirectPath = (role) => {
+  switch (role) {
+    case 'admin':
+      return '/admin/dashboard'
+    case 'official':
+      return '/official/dashboard'
+    case 'serviceman':
+      return '/serviceman/dashboard'
+    default:
+      return '/dashboard' // citizen
+  }
+}
+
+const getLoginErrorMessage = (error) => {
+  switch (error.code) {
+    case 'auth/invalid-credential':
+    case 'auth/wrong-password':
+    case 'auth/user-not-found':
+    case 'auth/invalid-email':
+      return 'Invalid credentials'
+    case 'auth/user-disabled':
+      return 'This account has been deactivated'
+    case 'auth/too-many-requests':
+      return 'Too many failed attempts. Please try again later.'
+    case 'auth/network-request-failed':
+      return 'Network error. Please check your connection.'
+    default:
+      if (error.response?.status === 401) return 'This account has been deactivated'
+      return error.response?.data?.error || 'Login failed'
+  }
+}
+
 export const AuthProvider = ({ children }) => {
   const [state, dispatch] = useReducer(authReducer, initialState)
 
-  // Check if user is logged in on app start
+  // Keep the app in sync with the Firebase Auth session (restores login on page load)
   useEffect(() => {
-    const checkAuth = async () => {
-      const token = localStorage.getItem('token')
-      if (token) {
-        try {
-          const response = await apiService.get('/auth/me')
-          dispatch({
-            type: 'LOGIN_SUCCESS',
-            payload: {
-              user: response.data.user,
-              token
-            }
-          })
-        } catch (error) {
-          localStorage.removeItem('token')
-          dispatch({ type: 'LOGIN_FAILURE' })
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (!firebaseUser) {
+        dispatch({ type: 'LOGIN_FAILURE' })
+        return
+      }
+
+      try {
+        const response = await apiService.get('/auth/me')
+        dispatch({ type: 'LOGIN_SUCCESS', payload: { user: response.data.user } })
+      } catch (error) {
+        // Signed in to Firebase but no active profile (e.g. deactivated account)
+        if (error.response?.status === 401) {
+          await signOut(auth)
         }
-      } else {
         dispatch({ type: 'LOGIN_FAILURE' })
       }
-    }
+    })
 
-    checkAuth()
+    return unsubscribe
   }, [])
 
   const login = async (email, password) => {
     try {
       dispatch({ type: 'LOGIN_START' })
-      const response = await apiService.post('/auth/login', { email, password })
-      
-      const { user, token } = response.data
-      localStorage.setItem('token', token)
+      await signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password)
 
-      console.log("user data : ", user, token)
-      
-      dispatch({
-        type: 'LOGIN_SUCCESS',
-        payload: { user, token }
-      })
-      
+      const response = await apiService.get('/auth/me')
+      const { user } = response.data
+
+      dispatch({ type: 'LOGIN_SUCCESS', payload: { user } })
+
       toast.success('Login successful!')
-      let redirectPath = '/dashboard'; // Default for citizen
-      if (user.role === 'admin') {
-        redirectPath = '/admin/dashboard';
-      } else if (user.role === 'official') {
-        redirectPath = '/official/dashboard';
-      } else if (user.role === 'serviceman') {
-        redirectPath = '/serviceman/dashboard';
-      }
-      return { success: true, redirectPath };
+      return { success: true, redirectPath: getRedirectPath(user.role) }
     } catch (error) {
+      await signOut(auth)
       dispatch({ type: 'LOGIN_FAILURE' })
-      const message = error.response?.data?.error || 'Login failed'
+      const message = getLoginErrorMessage(error)
       toast.error(message)
       return { success: false, error: message }
     }
@@ -114,39 +129,31 @@ export const AuthProvider = ({ children }) => {
   const register = async (userData) => {
     try {
       dispatch({ type: 'LOGIN_START' })
-      console.log("user data : ", userData)
-      const response = await apiService.post('/auth/register', userData)
-      if (response?.error) {
-        throw new Error(response.details[0].msg)
-      }
-      const { user, token } = response.data
-      localStorage.setItem('token', token)
-      
-      dispatch({
-        type: 'LOGIN_SUCCESS',
-        payload: { user, token }
-      })
-      
+      // The backend validates the data and creates the Firebase Auth account + profile
+      await apiService.post('/auth/register', userData)
+
+      // Then sign in with the new credentials
+      await signInWithEmailAndPassword(auth, userData.email.trim().toLowerCase(), userData.password)
+
+      const response = await apiService.get('/auth/me')
+      const { user } = response.data
+
+      dispatch({ type: 'LOGIN_SUCCESS', payload: { user } })
+
       toast.success('Registration successful!')
-      let redirectPath = '/dashboard'; // Default for citizen
-      if (user.role === 'admin') {
-        redirectPath = '/admin/dashboard';
-      } else if (user.role === 'official') {
-        redirectPath = '/official/dashboard';
-      } else if (user.role === 'serviceman') {
-        redirectPath = '/serviceman/dashboard';
-      }
-      return { success: true, redirectPath };
+      return { success: true, redirectPath: getRedirectPath(user.role) }
     } catch (error) {
       dispatch({ type: 'LOGIN_FAILURE' })
-      const message = error.response?.data?.error || 'Registration failed'
+      const message = error.response?.data?.details?.[0]?.msg
+        || error.response?.data?.error
+        || 'Registration failed'
       toast.error(message)
       return { success: false, error: message }
     }
   }
 
-  const logout = () => {
-    localStorage.removeItem('token')
+  const logout = async () => {
+    await signOut(auth)
     dispatch({ type: 'LOGOUT' })
     toast.success('Logged out successfully')
   }

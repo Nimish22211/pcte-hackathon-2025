@@ -40,7 +40,7 @@ export const DEPARTMENTS = [
 ]
 
 export const MAP_DEFAULTS = {
-  center: [40.7128, -74.0060], // New York City
+  center: [30.9090, 75.8516], // Ludhiana, Punjab, India
   zoom: 13,
   maxZoom: 18,
   minZoom: 10
