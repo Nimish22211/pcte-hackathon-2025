@@ -1,141 +1,187 @@
-const bcrypt = require('bcryptjs');
+const { auth } = require('../config/firebase');
 
+const COLLECTION = 'users';
+
+// Firestore Timestamp -> ISO string (keeps the JSON shape the frontend already expects)
+const toISO = (value) => {
+  if (!value) return null;
+  if (typeof value.toDate === 'function') return value.toDate().toISOString();
+  if (value instanceof Date) return value.toISOString();
+  return value;
+};
+const toMillis = (value) => (value && typeof value.toMillis === 'function' ? value.toMillis() : 0);
+
+const formatUser = (id, data) => ({
+  id,
+  name: data.name,
+  email: data.email,
+  phone: data.phone ?? null,
+  role: data.role,
+  department: data.department ?? null,
+  is_active: data.is_active !== false,
+  created_at: toISO(data.created_at)
+});
+
+// A user's id is their Firebase Auth uid; the profile lives in Firestore users/{uid}
 class User {
-  constructor(pool) {
-    this.pool = pool;
+  constructor(db) {
+    this.db = db;
+    this.collection = db.collection(COLLECTION);
   }
 
   async create(userData) {
     const { name, email, password, phone, role = 'citizen', department } = userData;
-    
-    // Hash password
-    const saltRounds = 12;
-    const password_hash = await bcrypt.hash(password, saltRounds);
-    
-    const query = `
-      INSERT INTO users (name, email, password_hash, phone, role, department)
-      VALUES ($1, $2, $3, $4, $5, $6)
-      RETURNING id, name, email, phone, role, department, is_active, created_at
-    `;
-    
-    const values = [name, email, password_hash, phone, role, department];
-    const result = await this.pool.query(query, values);
-    
-    return result.rows[0];
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const record = await auth.createUser({
+      email: normalizedEmail,
+      password,
+      displayName: name,
+      disabled: false
+    });
+
+    const now = new Date();
+    const data = {
+      name,
+      email: normalizedEmail,
+      phone: phone || null,
+      role,
+      department: department || null,
+      is_active: true,
+      created_at: now,
+      updated_at: now
+    };
+
+    try {
+      await this.collection.doc(record.uid).set(data);
+    } catch (error) {
+      // Do not leave an Auth account without a profile
+      await auth.deleteUser(record.uid).catch(() => {});
+      throw error;
+    }
+
+    return formatUser(record.uid, data);
   }
 
-  async findByEmail(email) {
-    const query = `SELECT * FROM users WHERE email = $1 AND is_active = true`;
-    const result = await this.pool.query(query, [email.toLowerCase()]);
-    return result.rows[0];
+  // Returns a document reference, or null when the id cannot be a valid document id
+  ref(id) {
+    const value = String(id ?? '');
+    return /^[\w-]{1,128}$/.test(value) ? this.collection.doc(value) : null;
   }
 
   async findById(id) {
-    const query = `
-      SELECT id, name, email, phone, role, department, is_active, created_at
-      FROM users WHERE id = $1 AND is_active = true
-    `;
-    const result = await this.pool.query(query, [parseInt(id)]);
-    return result.rows[0];
+    const ref = this.ref(id);
+    if (!ref) return undefined;
+    const snap = await ref.get();
+    if (!snap.exists) return undefined;
+    const data = snap.data();
+    if (data.is_active === false) return undefined;
+    return formatUser(snap.id, data);
   }
 
-  async findOfficials() {
-    const query = `
-      SELECT id, name, email, department, role
-      FROM users 
-      WHERE role IN ('official', 'admin') AND is_active = true
-      ORDER BY department, name
-    `;
-    const result = await this.pool.query(query);
-    return result.rows;
+  async findByIds(ids) {
+    const unique = [...new Set(ids.filter(Boolean).map(String))].filter((id) => this.ref(id));
+    if (unique.length === 0) return new Map();
+    const snaps = await this.db.getAll(...unique.map((id) => this.collection.doc(id)));
+    const map = new Map();
+    snaps.forEach((snap) => {
+      if (snap.exists) map.set(snap.id, snap.data());
+    });
+    return map;
+  }
+
+  // Active users with one of the given roles, optionally limited to a department
+  async findByRoles(roles, { department } = {}) {
+    const snap = await this.collection.where('role', 'in', roles).get();
+    return snap.docs
+      .map((doc) => ({ id: doc.id, ...doc.data() }))
+      .filter((user) => user.is_active !== false)
+      .filter((user) => !department || user.department === department)
+      .sort((a, b) => (a.department || '').localeCompare(b.department || '') || (a.name || '').localeCompare(b.name || ''))
+      .map((user) => ({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        department: user.department ?? null,
+        role: user.role
+      }));
   }
 
   async findAll(filters = {}) {
-    let query = `
-      SELECT id, name, email, phone, role, department, is_active, created_at
-      FROM users 
-      WHERE 1=1
-    `;
-    const values = [];
-    let paramCount = 0;
+    let query = this.collection;
 
-    if (filters.role) {
-      paramCount++;
-      query += ` AND role = $${paramCount}`;
-      values.push(filters.role);
+    if (typeof filters.role === 'string' && filters.role) {
+      query = query.where('role', '==', filters.role);
     }
-
-    if (filters.department) {
-      paramCount++;
-      query += ` AND department = $${paramCount}`;
-      values.push(filters.department);
+    if (typeof filters.department === 'string' && filters.department) {
+      query = query.where('department', '==', filters.department);
     }
-
     if (filters.is_active !== undefined) {
-      paramCount++;
-      query += ` AND is_active = $${paramCount}`;
-      values.push(filters.is_active);
+      query = query.where('is_active', '==', String(filters.is_active) === 'true');
     }
 
-    query += ` ORDER BY created_at DESC`;
-
-    const result = await this.pool.query(query, values);
-    return result.rows;
+    const snap = await query.get();
+    return snap.docs
+      .map((doc) => ({ id: doc.id, data: doc.data() }))
+      .sort((a, b) => toMillis(b.data.created_at) - toMillis(a.data.created_at))
+      .map(({ id, data }) => formatUser(id, data));
   }
 
   async updateRole(id, role, department = null) {
-    const query = `
-      UPDATE users 
-      SET role = $1, department = $2, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $3 AND is_active = true
-      RETURNING id, name, email, phone, role, department, is_active, created_at
-    `;
-    
-    const result = await this.pool.query(query, [role, department, parseInt(id)]);
-    return result.rows[0];
-  }
+    const ref = this.ref(id);
+    if (!ref) return undefined;
+    const snap = await ref.get();
+    if (!snap.exists || snap.data().is_active === false) return undefined;
 
-  async comparePassword(plainPassword, hashedPassword) {
-    return bcrypt.compare(plainPassword, hashedPassword);
-  }
-
-  async updatePassword(id, newPassword) {
-    const saltRounds = 12;
-    const password_hash = await bcrypt.hash(newPassword, saltRounds);
-    
-    const query = `
-      UPDATE users 
-      SET password_hash = $1, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $2 AND is_active = true
-    `;
-    
-    await this.pool.query(query, [password_hash, parseInt(id)]);
-    return true;
+    await ref.update({ role, department: department || null, updated_at: new Date() });
+    return formatUser(ref.id, { ...snap.data(), role, department: department || null });
   }
 
   async updateProfile(id, updateData) {
-    const { name, phone, department } = updateData;
-    const query = `
-      UPDATE users 
-      SET name = $1, phone = $2, department = $3, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $4 AND is_active = true
-      RETURNING id, name, email, phone, role, department, is_active, created_at
-    `;
-    
-    const result = await this.pool.query(query, [name, phone, department, parseInt(id)]);
-    return result.rows[0];
+    const ref = this.ref(id);
+    if (!ref) return undefined;
+    const snap = await ref.get();
+    if (!snap.exists || snap.data().is_active === false) return undefined;
+
+    const changes = {};
+    ['name', 'phone', 'department'].forEach((field) => {
+      if (updateData[field] !== undefined) {
+        changes[field] = updateData[field] === '' ? null : updateData[field];
+      }
+    });
+    changes.updated_at = new Date();
+
+    await ref.update(changes);
+    if (changes.name) {
+      await auth.updateUser(ref.id, { displayName: changes.name }).catch(() => {});
+    }
+    return formatUser(ref.id, { ...snap.data(), ...changes });
   }
 
   async deactivateUser(id) {
-    const query = `
-      UPDATE users 
-      SET is_active = false, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1
-      RETURNING id, name, email, is_active
-    `;
-    
-    const result = await this.pool.query(query, [parseInt(id)]);
-    return result.rows[0];
+    const ref = this.ref(id);
+    if (!ref) return undefined;
+    const snap = await ref.get();
+    if (!snap.exists) return undefined;
+
+    await ref.update({ is_active: false, updated_at: new Date() });
+    await auth.updateUser(ref.id, { disabled: true }).catch(() => {});
+
+    const data = snap.data();
+    return { id: ref.id, name: data.name, email: data.email, is_active: false };
+  }
+
+  async activateUser(id) {
+    const ref = this.ref(id);
+    if (!ref) return undefined;
+    const snap = await ref.get();
+    if (!snap.exists) return undefined;
+
+    await auth.updateUser(ref.id, { disabled: false });
+    await ref.update({ is_active: true, updated_at: new Date() });
+
+    const data = snap.data();
+    return { id: ref.id, name: data.name, email: data.email, is_active: true };
   }
 }
 

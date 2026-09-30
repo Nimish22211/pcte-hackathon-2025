@@ -93,3 +93,6 @@ public
 # Temporary folders
 tmp/
 temp/
+# Firebase service account keys - never commit
+serviceAccountKey*.json
+*-firebase-adminsdk-*.json
