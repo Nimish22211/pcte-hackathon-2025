@@ -27,10 +27,20 @@ The Civic Issues Platform is designed to bridge the gap between citizens and mun
 - **Location accuracy** with address auto-fill
 - **Real-time validation** and feedback
 
-### 👥 Role-Based Access
-- **Citizens**: Report issues, track submissions, view public issues
-- **Officials**: Manage assigned issues, update status, add internal notes
-- **Admins**: Full system access, user management, analytics dashboard
+### 👥 Roles and Workflow
+- **Citizens**: sign up themselves, report issues with photos and location, track their own reports.
+- **Admins**: appoint officials, servicemen and other admins (User Management), assign every reported issue to an official, see analytics.
+- **Officials**: receive issues from the admin, choose a serviceman **from their own department**, then verify the finished work or send it back for rework.
+- **Servicemen**: see only the jobs an official assigned to them; start the work and mark it resolved.
+
+```
+reported --(admin assigns an official)--> acknowledged
+acknowledged --(official chooses a serviceman)
+acknowledged --(serviceman starts)--> in_progress --(serviceman completes)--> resolved
+resolved --(official verifies)--> verified      resolved --(official sends back)--> in_progress
+```
+
+Permissions are enforced by the API, not just hidden in the UI. Internal notes and reporter contact details are only visible to the admin and to the official / serviceman assigned to that issue.
 
 ### 📊 Analytics & Reporting
 - **Resolution metrics** and performance tracking
@@ -40,99 +50,62 @@ The Civic Issues Platform is designed to bridge the gap between citizens and mun
 
 ## 🛠️ Tech Stack
 
-### Frontend
-- **React 18** with Vite for fast development
-- **TailwindCSS** for utility-first styling
-- **ShadCN UI** for beautiful, accessible components
-- **React Router DOM** for client-side routing
-- **Leaflet.js** for interactive maps
-- **Axios** for API communication
-- **React Context** for state management
+- **Frontend:** React 18, Vite, TailwindCSS, shadcn/Radix UI, React Router, Leaflet, Recharts, Socket.IO client
+- **Backend:** Express, Socket.IO, express-validator, Firebase Admin SDK
+- **Firebase:** Firestore (database), Authentication (email + password)
+- **Images:** Cloudinary (unsigned uploads from the browser)
 
-### Backend
-- **Express.js** for RESTful API
-- **PostgreSQL** with optimized queries
-- **JWT** authentication with role-based access
-- **Socket.IO** for real-time updates
-- **Cloudinary** for image storage and optimization
-- **bcryptjs** for secure password hashing
+## 🚀 Setup
 
-### Infrastructure
-- **Render.com** for backend hosting
-- **PostgreSQL** database on Render
-- **Cloudinary** for image CDN
-- **GitHub** for version control
+### 1. Firebase (console.firebase.google.com)
+1. **Authentication → Get started → Sign-in method → Email/Password → Enable.**
+2. **Firestore Database** must exist (Create database, production mode is fine).
+3. **Project settings → Service accounts → Generate new private key.** Save it as `firebase-service-account.json` in the repo root (it is gitignored).
+4. **Project settings → Your apps** → register a Web app and copy its config values.
+5. Optional: deploy the locked-down rules: `firebase deploy --only firestore:rules` (the backend uses the Admin SDK, so clients never access Firestore directly).
 
-## 🚀 Quick Start
+### 2. Cloudinary
+Create an account, copy the cloud name / API key / API secret, and create an **unsigned upload preset** (Settings → Upload → Upload presets).
 
-### Prerequisites
-- Node.js 18+ and npm
-- PostgreSQL database (Render recommended)
-- Cloudinary account for image storage
+### 3. Environment files
+- `backend/.env` ← copy from `backend/env.example` (Firebase service account path + Cloudinary keys)
+- `frontend/.env.local` ← copy from `frontend/env.example` (API URL, Firebase web config, Cloudinary cloud name + preset)
 
-### 1. Clone Repository
+### 4. Install and run
 ```bash
-git clone https://github.com/your-username/civic-issues-platform.git
-cd civic-issues-platform
+npm run install:all
+cd backend && npm run db:init && npm run db:seed   # admin account + sample data
+npm run dev                                        # backend on :5000
+# in a second terminal
+cd frontend && npm run dev                         # frontend on :5173
 ```
-
-### 2. Backend Setup
-```bash
-cd backend
-npm install
-cp env.example .env
-# Update .env with your database and Cloudinary credentials
-npm run db:init
-npm run db:seed
-npm run dev
-```
-
-### 3. Frontend Setup
-```bash
-cd frontend
-npm install
-cp env.example .env.local
-# Update .env.local with your API URL and Cloudinary credentials
-npm run dev
-```
-
-### 4. Access the Application
-- **Frontend**: http://localhost:5173
-- **Backend API**: http://localhost:5000
-- **Health Check**: http://localhost:5000/health
 
 ## 🔐 Default Login Credentials
 
-After running `npm run db:seed`:
+After `npm run db:init` / `npm run db:seed` (demo passwords, change them before going live):
 
-- **Admin**: admin@civic-platform.com / admin123
-- **Citizen**: john@example.com / password123
-- **Official**: jane@city.gov / password123
+| Role | Email | Department |
+|---|---|---|
+| Admin | admin@civic-platform.com / admin123 | |
+| Citizen | john@example.com / password123 | |
+| Officials | jane@city.gov, bob@city.gov, alice@city.gov / password123 | public works, traffic, parks |
+| Servicemen | sam@city.gov, tina@city.gov, pete@city.gov / password123 | public works, traffic, parks |
+
+The seed data contains sample issues in Ludhiana, Punjab, at every stage of the workflow.
 
 ## 📁 Project Structure
 
 ```
-civic-issues-platform/
-├── frontend/                 # React frontend application
-│   ├── src/
-│   │   ├── components/      # Reusable UI components
-│   │   ├── context/         # React Context providers
-│   │   ├── hooks/          # Custom React hooks
-│   │   ├── pages/          # Page components
-│   │   ├── services/       # API and external services
-│   │   └── utils/          # Utility functions
-│   ├── package.json
-│   └── README.md
-├── backend/                 # Express.js backend API
-│   ├── models/             # Database models
-│   ├── routes/             # API routes
-│   ├── middleware/         # Custom middleware
-│   ├── services/           # External services
-│   ├── scripts/            # Database scripts
-│   ├── server.js          # Main server file
-│   ├── package.json
-│   └── README.md
-└── README.md               # This file
+├── frontend/            # React app (src/lib/firebase.js = Firebase Auth client)
+├── backend/
+│   ├── config/          # Firebase Admin init, shared constants
+│   ├── models/          # Firestore data access (User, Issue)
+│   ├── routes/          # REST API
+│   ├── middleware/      # Firebase ID-token auth + role checks
+│   ├── services/        # Cloudinary
+│   └── scripts/         # db:init (admin), db:seed (sample data)
+├── firebase.json, firestore.rules, firestore.indexes.json
+└── PRD.md
 ```
 
 ## 🎯 Demo Flow (5-minute presentation)
@@ -159,8 +132,8 @@ civic-issues-platform/
 ### 5. Technical Excellence (45s)
 - Mobile-responsive design with TailwindCSS
 - Real-time updates with Socket.IO
-- Secure authentication with JWT
-- Render deployment with PostgreSQL
+- Secure authentication with Firebase Auth
+- Firestore database on Firebase
 
 ### 6. Future Vision (30s)
 - Integration with existing municipal systems
@@ -177,7 +150,7 @@ civic-issues-platform/
 - **Caching strategies** for high-traffic scenarios
 
 ### Security Features
-- **JWT authentication** with role-based access control
+- **Firebase Auth (ID tokens)** with role-based access control
 - **Input validation** and sanitization
 - **Rate limiting** to prevent abuse
 - **CORS configuration** for secure cross-origin requests
@@ -203,64 +176,13 @@ civic-issues-platform/
 - **Citizen Satisfaction**: Through status tracking
 - **Cost Savings**: 70% reduction in municipal helpdesk costs
 
-## 🚀 Deployment Guide
+## 🚀 Going to production
 
-### Backend (Render.com)
-1. Connect GitHub repository
-2. Set environment variables:
-   - `DATABASE_URL`
-   - `JWT_SECRET`
-   - `CLOUDINARY_*` credentials
-   - `FRONTEND_URL`
-3. Deploy automatically
-
-### Frontend (Vercel/Netlify)
-1. Connect GitHub repository
-2. Set environment variables:
-   - `VITE_API_URL`
-   - `VITE_CLOUDINARY_*` credentials
-3. Deploy with build command: `npm run build`
-
-### Database Setup
-1. Create PostgreSQL database on Render
-2. Run initialization script: `npm run db:init`
-3. Seed with sample data: `npm run db:seed`
-
-## 🔧 Development
-
-### Local Development
-```bash
-# Start backend
-cd backend
-npm run dev
-
-# Start frontend (in new terminal)
-cd frontend
-npm run dev
-```
-
-### Database Management
-```bash
-# Initialize database
-npm run db:init
-
-# Seed with sample data
-npm run db:seed
-
-# Reset database (careful!)
-npm run db:reset
-```
-
-### Testing
-```bash
-# Backend tests
-cd backend
-npm test
-
-# Frontend tests
-cd frontend
-npm test
-```
+1. Backend environment: `NODE_ENV=production`, `FRONTEND_URL=https://your-frontend-domain` (comma-separate several), Firebase credentials (`FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`) and the Cloudinary keys. Do not upload `firebase-service-account.json`.
+2. Frontend environment: `VITE_API_URL=https://your-backend-domain/api`, the Firebase web config and the Cloudinary values; then `npm run build` and host `frontend/dist`.
+3. Firebase console → Authentication → Settings → Authorized domains: add your frontend domain.
+4. Deploy the locked-down database rules: `firebase deploy --only firestore:rules`.
+5. Change the demo passwords, or delete the demo accounts and create your own staff in the admin dashboard.
 
 ## 🤝 Contributing
 

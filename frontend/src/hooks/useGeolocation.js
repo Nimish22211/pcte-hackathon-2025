@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { getCurrentLocation } from '../services/mapService'
 
 export const useGeolocation = () => {
@@ -6,51 +6,51 @@ export const useGeolocation = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [initialLocationFetched, setInitialLocationFetched] = useState(false)
+  const mounted = useRef(true)
 
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
+
+  // Explicit request (the "Get location" button): always asks the browser again
   const getLocation = async () => {
     setLoading(true)
     setError(null)
-    
+
     try {
       const coords = await getCurrentLocation()
-      setLocation(coords)
+      if (mounted.current) setLocation(coords)
       return coords
     } catch (err) {
-      setError(err.message)
+      if (mounted.current) setError(err.message)
       throw err
     } finally {
-      setLoading(false)
+      if (mounted.current) setLoading(false)
     }
   }
 
+  // Try once when the page opens. Failing silently is fine: the button can be used afterwards.
   useEffect(() => {
-    // Auto-fetch location on mount with better options
-    if (navigator.geolocation && !initialLocationFetched) {
-      setLoading(true)
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const coords = {
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude
-          }
-          setLocation(coords)
-          setInitialLocationFetched(true)
-          setLoading(false)
-        },
-        (err) => {
-          console.log('Initial geolocation failed:', err.message)
-          setError(err.message)
-          setInitialLocationFetched(true)
-          setLoading(false)
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 5000,
-          maximumAge: 60000
-        }
-      )
+    let cancelled = false
+
+    getCurrentLocation()
+      .then((coords) => {
+        if (!cancelled) setLocation(coords)
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message)
+      })
+      .finally(() => {
+        if (!cancelled) setInitialLocationFetched(true)
+      })
+
+    return () => {
+      cancelled = true
     }
-  }, [initialLocationFetched])
+  }, [])
 
   return {
     location,

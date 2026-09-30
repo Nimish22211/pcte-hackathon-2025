@@ -1,28 +1,37 @@
 // Map utility functions
-export const getCurrentLocation = () => {
-  return new Promise((resolve, reject) => {
-    if (!navigator.geolocation) {
-      reject(new Error('Geolocation is not supported by this browser'))
-      return
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        resolve({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude
-        })
-      },
-      (error) => {
-        reject(error)
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 5000, // Reduced to 5 seconds
-        maximumAge: 60000 // 1 minute for fresher location
-      }
-    )
+const requestPosition = (options) =>
+  new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(resolve, reject, options)
   })
+
+// Asks the browser for the current position. Every call requests a fresh fix, so the browser
+// shows its permission prompt again if the site's permission was reset (e.g. after a reload).
+// A precise (GPS) fix is tried first; desktops without GPS usually need the slower
+// network-based lookup, so that is used as a fallback instead of failing.
+export const getCurrentLocation = async () => {
+  if (!navigator.geolocation) {
+    throw new Error('Geolocation is not supported by this browser')
+  }
+
+  // Browsers only allow location on HTTPS pages (and localhost)
+  if (window.isSecureContext === false) {
+    throw Object.assign(new Error('Location only works on a secure (HTTPS) connection'), { code: 'INSECURE' })
+  }
+
+  let position
+  try {
+    position = await requestPosition({ enableHighAccuracy: true, timeout: 10000, maximumAge: 0 })
+  } catch (error) {
+    // Permission problems will not be fixed by trying again
+    if (error.code === 1) throw error
+    position = await requestPosition({ enableHighAccuracy: false, timeout: 20000, maximumAge: 300000 })
+  }
+
+  return {
+    latitude: position.coords.latitude,
+    longitude: position.coords.longitude,
+    accuracy: position.coords.accuracy
+  }
 }
 
 export const getAddressFromCoordinates = async (latitude, longitude) => {

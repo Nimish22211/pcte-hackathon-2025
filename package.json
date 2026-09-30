@@ -1,50 +1,15 @@
 {
-  "name": "civic-issue-platform-tests",
+  "name": "civic-issues-platform",
   "version": "1.0.0",
-  "description": "Test suite for Civic Issue Reporting Platform - Hackathon Project",
-  "main": "test-simple.js",
+  "private": true,
+  "description": "Civic Issues Platform - React frontend + Express API on Firebase (Firestore + Auth) with Cloudinary images",
   "scripts": {
-    "test": "node test-simple.js",
-    "test:full": "node run-all-tests.js",
-    "test:e2e": "node e2e-test.js",
-    "test:structure": "node test-simple.js",
     "install:all": "cd backend && npm install && cd ../frontend && npm install",
+    "setup": "npm run install:all && cd backend && npm run db:init",
+    "seed": "cd backend && npm run db:seed",
     "start:backend": "cd backend && npm run dev",
-    "start:frontend": "cd frontend && npm run dev",
-    "setup": "npm run install:all && cd backend && npm run db:init"
+    "start:frontend": "cd frontend && npm run dev"
   },
-  "keywords": [
-    "civic",
-    "issues",
-    "reporting",
-    "hackathon",
-    "testing",
-    "real-time",
-    "socket.io",
-    "react",
-    "express"
-  ],
-  "author": "Hackathon Team",
-  "license": "MIT",
-  "dependencies": {
-    "axios": "^1.6.2",
-    "puppeteer": "^21.5.2",
-    "socket.io-client": "^4.7.4"
-  },
-  "devDependencies": {
-    "jest": "^29.7.0",
-    "supertest": "^6.3.3"
-  },
-  "engines": {
-    "node": ">=18.0.0",
-    "npm": ">=9.0.0"
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/Nimish22211/pcte-hackathon-2025.git"
-  },
-  "bugs": {
-    "url": "https://github.com/Nimish22211/pcte-hackathon-2025/issues"
-  },
-  "homepage": "https://github.com/Nimish22211/pcte-hackathon-2025#readme"
+  "engines": { "node": ">=18.0.0" },
+  "license": "MIT"
 }

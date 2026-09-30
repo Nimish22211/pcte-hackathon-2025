@@ -97,11 +97,13 @@ const ReportIssuePage = () => {
       let errorMessage = 'Failed to get location'
       
       if (error.code === 1) {
-        errorMessage = 'Location access denied. Please enable location permissions.'
+        errorMessage = 'Location access is blocked for this site. Click the lock icon in the address bar, allow Location, then press the button again.'
       } else if (error.code === 2) {
-        errorMessage = 'Location unavailable. Please try again.'
+        errorMessage = 'Your device could not determine its location. Check that Windows/device location services are on, or click the map to choose the spot.'
       } else if (error.code === 3) {
-        errorMessage = 'Location request timed out. Please try again.'
+        errorMessage = 'Finding your location took too long. Please try again, or click the map to choose the spot.'
+      } else if (error.code === 'INSECURE') {
+        errorMessage = error.message
       }
       
       toast.error(errorMessage)
@@ -252,7 +254,7 @@ const ReportIssuePage = () => {
               {/* Location */}
               <div>
                 <Label>Location *</Label>
-                {!initialLocationFetched && locationLoading && (
+                {!initialLocationFetched && (
                   <div className="text-sm text-blue-600 mb-2 flex items-center space-x-2">
                     <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
                     <span>Getting your location automatically...</span>
