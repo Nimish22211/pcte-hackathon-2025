@@ -32,7 +32,14 @@ function App() {
               <Routes>
                 <Route path="/" element={<Landing />} />
                 <Route path="/map" element={<HomePage />} />
-                <Route path="/report" element={<ReportIssuePage />} />
+                <Route
+                  path="/report"
+                  element={
+                    <ProtectedRoute>
+                      <ReportIssuePage />
+                    </ProtectedRoute>
+                  }
+                />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/register" element={<RegisterPage />} />
                 <Route path="/issue/:id" element={<IssueDetailsPage />} />
@@ -60,12 +67,12 @@ function App() {
                     </ProtectedRoute>
                   }
                 />
-                  {/* <ProtectedRoute requiredRole="serviceman"> */}
-                    {/* </ProtectedRoute> */}
                 <Route 
                   path="/serviceman/dashboard" 
                   element={
+                    <ProtectedRoute requiredRole="serviceman">
                       <ServiceManDashboard />
+                    </ProtectedRoute>
                   }
                 />
               </Routes>

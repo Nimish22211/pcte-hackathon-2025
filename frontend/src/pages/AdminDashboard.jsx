@@ -4,7 +4,9 @@ import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
-import { AlertCircle, Clock, Network, Cpu, BarChart3, Database, Shield, TrendingUp, Users, MapPin } from 'lucide-react'
+import { AlertCircle, Clock, BarChart3, Database, Shield, TrendingUp } from 'lucide-react'
+import IssueAssignmentQueue from '../components/Admin/IssueAssignmentQueue'
+import UserManagement from '../components/Admin/UserManagement'
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, LineChart, Line, Area, AreaChart
@@ -29,16 +31,18 @@ const AdminDashboard = () => {
   const [loading, setLoading] = useState(true)
   const [trendData, setTrendData] = useState([])
 
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        await fetchAnalytics()
-        const trends = await fetchTrendData(6)
-        setTrendData(trends)
-      } finally {
-        setLoading(false)
-      }
+  const loadData = async () => {
+    setLoading(true)
+    try {
+      await fetchAnalytics()
+      const trends = await fetchTrendData(6)
+      setTrendData(trends)
+    } finally {
+      setLoading(false)
     }
+  }
+
+  useEffect(() => {
     loadData()
   }, [])
 
@@ -92,7 +96,7 @@ const AdminDashboard = () => {
             </div>
             <div className="flex items-center gap-2">
               <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200">LIVE</Badge>
-              <Button variant="outline">Sync Data</Button>
+              <Button variant="outline" onClick={loadData} disabled={loading}>Sync Data</Button>
             </div>
           </div>
         </div>
@@ -122,6 +126,12 @@ const AdminDashboard = () => {
             icon={Clock}
           />
         </div>
+
+        {/* Assign reported issues to officials */}
+        <IssueAssignmentQueue />
+
+        {/* Appoint and manage officials, servicemen and admins */}
+        <UserManagement />
 
         {/* Charts Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">

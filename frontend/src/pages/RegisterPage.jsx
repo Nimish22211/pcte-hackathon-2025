@@ -4,10 +4,8 @@ import { useAuth } from '../context/AuthContext'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { MapPin, Eye, EyeOff } from 'lucide-react'
-import { DEPARTMENTS } from '../utils/constants'
 
 const RegisterPage = () => {
   const navigate = useNavigate()
@@ -18,9 +16,7 @@ const RegisterPage = () => {
     email: '',
     password: '',
     confirmPassword: '',
-    phone: '',
-    role: 'citizen',
-    department: ''
+    phone: ''
   })
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
@@ -114,43 +110,6 @@ const RegisterPage = () => {
               </div>
 
               <div>
-                <Label htmlFor="role">Role</Label>
-                <Select
-                  value={formData.role}
-                  onValueChange={(value) => handleInputChange('role', value)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-60 overflow-y-auto bg-white" >
-                    <SelectItem value="citizen">Citizen</SelectItem>
-                    <SelectItem value="official">Official</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* {formData.role === 'official' && (
-                <div>
-                  <Label htmlFor="department">Department</Label>
-                  <Select
-                    value={formData.department}
-                    onValueChange={(value) => handleInputChange('department', value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select department" />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-60 overflow-y-auto bg-white">
-                      {DEPARTMENTS.map((dept) => (
-                        <SelectItem key={dept.value} value={dept.value}>
-                          {dept.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )} */}
-
-              <div>
                 <Label htmlFor="password">Password</Label>
                 <div className="relative">
                   <Input
@@ -159,6 +118,7 @@ const RegisterPage = () => {
                     type={showPassword ? 'text' : 'password'}
                     autoComplete="new-password"
                     required
+                    minLength={6}
                     value={formData.password}
                     onChange={(e) => handleInputChange('password', e.target.value)}
                     placeholder="Enter your password"

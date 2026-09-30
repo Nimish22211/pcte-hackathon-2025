@@ -1,66 +1,31 @@
+import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useIssues } from '../context/IssueContext'
-import { useEffect, useState } from 'react'
+import { useAssignedIssues } from '../hooks/useAssignedIssues'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Badge } from '../components/ui/badge'
-import { Hammer, MapPin, ClipboardList, Check, Clock, AlertTriangle, Camera, AlertCircle } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Hammer, MapPin, ClipboardList, Check, Clock, AlertTriangle, AlertCircle } from 'lucide-react'
+import { getStatusColor } from '../utils/helpers'
+
+const ON_DUTY_KEY = 'serviceman-on-duty'
 
 const ServiceManDashboard = () => {
   const { user } = useAuth()
-  const { fetchAssignedIssues, fetchOfficialStats, updateIssueStatus, loading } = useIssues()
-  const [assignedIssues, setAssignedIssues] = useState([])
-  const [stats, setStats] = useState({ pending: 0, inProgress: 0, resolvedThisWeek: 0 })
-  const [loadingStats, setLoadingStats] = useState(true)
-  const [onDuty, setOnDuty] = useState(false)
+  const { updateIssueStatus } = useIssues()
+  const { issues, stats, loading, refresh } = useAssignedIssues()
+  const [onDuty, setOnDuty] = useState(() => localStorage.getItem(ON_DUTY_KEY) === 'true')
 
-  useEffect(() => {
-    const loadServiceManData = async () => {
-      if (user?.id) {
-        try {
-          const [issues, serviceStats] = await Promise.all([
-            fetchAssignedIssues(user.id),
-            fetchOfficialStats(user.id)
-          ])
-          setAssignedIssues(issues)
-          setStats(serviceStats)
-        } catch (error) {
-          console.error('Error loading serviceman data:', error)
-        } finally {
-          setLoadingStats(false)
-        }
-      }
-    }
-    loadServiceManData()
-  }, [user?.id])
+  const toggleDuty = () => {
+    const next = !onDuty
+    localStorage.setItem(ON_DUTY_KEY, String(next))
+    setOnDuty(next)
+  }
 
   const handleStatusUpdate = async (issueId, newStatus) => {
     const result = await updateIssueStatus(issueId, newStatus)
-    if (result.success) {
-      // Refresh the assigned issues
-      const updatedIssues = await fetchAssignedIssues(user.id)
-      setAssignedIssues(updatedIssues)
-      
-      // Refresh stats
-      const updatedStats = await fetchOfficialStats(user.id)
-      setStats(updatedStats)
-    }
-  }
-
-  const toggleDuty = () => {
-    setOnDuty(!onDuty)
-  }
-
-  const getStatusColor = (status) => {
-    const colors = {
-      reported: 'bg-red-100 text-red-800',
-      acknowledged: 'bg-yellow-100 text-yellow-800',
-      in_progress: 'bg-blue-100 text-blue-800',
-      resolved: 'bg-green-100 text-green-800',
-      verified: 'bg-purple-100 text-purple-800'
-    }
-    return colors[status] || 'bg-gray-100 text-gray-800'
+    if (result.success) await refresh()
   }
 
   const getPriorityColor = (severity) => {
@@ -69,10 +34,8 @@ const ServiceManDashboard = () => {
     return 'text-yellow-600'
   }
 
-  const todayIssues = assignedIssues.filter(issue => {
-    const today = new Date().toDateString()
-    return new Date(issue.created_at).toDateString() === today
-  })
+  const nextJob = issues.find((issue) => issue.status === 'acknowledged')
+  const openJobs = issues.filter((issue) => issue.status === 'acknowledged' || issue.status === 'in_progress')
 
   return (
     <div className="min-h-screen bg-white">
@@ -84,7 +47,12 @@ const ServiceManDashboard = () => {
               <p className="text-sm text-gray-600">Welcome, {user?.name}</p>
             </div>
             <div className="flex items-center gap-2">
-              <Badge className={onDuty ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-gray-50 text-gray-700 border-gray-200"}>
+              {user?.department && (
+                <Badge className="bg-blue-50 text-blue-700 border-blue-200">
+                  {user.department.replace('_', ' ')}
+                </Badge>
+              )}
+              <Badge className={onDuty ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-gray-50 text-gray-700 border-gray-200'}>
                 {onDuty ? 'On Duty' : 'Off Duty'}
               </Badge>
               <Button variant="outline" onClick={toggleDuty}>
@@ -99,11 +67,11 @@ const ServiceManDashboard = () => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2"><ClipboardList className="h-5 w-5" /> Jobs Assigned</CardTitle>
+              <CardTitle className="flex items-center gap-2"><ClipboardList className="h-5 w-5" /> Jobs Waiting</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-semibold">{loadingStats ? '—' : todayIssues.length}</div>
-              <p className="text-xs text-gray-500">For today</p>
+              <div className="text-3xl font-semibold">{loading ? '—' : stats.pending}</div>
+              <p className="text-xs text-gray-500">Assigned to you, not started</p>
             </CardContent>
           </Card>
           <Card>
@@ -111,7 +79,7 @@ const ServiceManDashboard = () => {
               <CardTitle className="flex items-center gap-2"><Hammer className="h-5 w-5" /> In Progress</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-semibold">{loadingStats ? '—' : stats.inProgress}</div>
+              <div className="text-3xl font-semibold">{loading ? '—' : stats.inProgress}</div>
               <p className="text-xs text-gray-500">Working now</p>
             </CardContent>
           </Card>
@@ -120,7 +88,7 @@ const ServiceManDashboard = () => {
               <CardTitle className="flex items-center gap-2"><Check className="h-5 w-5" /> Completed</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-semibold">{loadingStats ? '—' : stats.resolvedThisWeek}</div>
+              <div className="text-3xl font-semibold">{loading ? '—' : stats.resolvedThisWeek}</div>
               <p className="text-xs text-gray-500">This week</p>
             </CardContent>
           </Card>
@@ -135,31 +103,31 @@ const ServiceManDashboard = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4 max-h-96 overflow-y-auto">
+                <div className="space-y-4 max-h-[36rem] overflow-y-auto">
                   {loading ? (
                     <div className="flex items-center justify-center py-8">
                       <div className="text-sm text-gray-500">Loading work queue...</div>
                     </div>
-                  ) : assignedIssues.length === 0 ? (
+                  ) : issues.length === 0 ? (
                     <div className="flex items-center justify-center py-8">
-                      <div className="text-sm text-gray-500">No jobs assigned yet</div>
+                      <div className="text-sm text-gray-500">No jobs assigned yet. Your official will assign jobs to you.</div>
                     </div>
                   ) : (
-                    assignedIssues.map((issue) => (
+                    issues.map((issue) => (
                       <div key={issue.id} className="border rounded-lg p-4 hover:bg-gray-50">
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-2">
+                            <div className="flex flex-wrap items-center gap-2 mb-2">
                               <h4 className="font-medium text-sm">{issue.title}</h4>
                               <Badge className={getStatusColor(issue.status)}>
                                 {issue.status.replace('_', ' ')}
                               </Badge>
-                              {issue.severity >= 4 && (
+                              {issue.severity >= 4 && issue.status !== 'verified' && (
                                 <Badge className="bg-red-100 text-red-800">HIGH PRIORITY</Badge>
                               )}
                             </div>
                             <p className="text-xs text-gray-600 mb-2">{issue.description}</p>
-                            <div className="flex items-center gap-4 text-xs text-gray-500">
+                            <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500">
                               <span className="flex items-center gap-1">
                                 <MapPin className="h-3 w-3" />
                                 {issue.address || 'Location not specified'}
@@ -173,6 +141,14 @@ const ServiceManDashboard = () => {
                                 {new Date(issue.created_at).toLocaleDateString()}
                               </span>
                             </div>
+                            {issue.assigned_to_name && (
+                              <p className="mt-2 text-xs text-gray-700">
+                                Assigned by: <span className="font-medium">{issue.assigned_to_name}</span>
+                              </p>
+                            )}
+                            {issue.status === 'resolved' && (
+                              <p className="mt-2 text-xs text-green-700">Waiting for your official to verify the work</p>
+                            )}
                           </div>
                           <div className="flex flex-col gap-2 ml-4">
                             {issue.status === 'acknowledged' && (
@@ -181,6 +157,7 @@ const ServiceManDashboard = () => {
                                 onClick={() => handleStatusUpdate(issue.id, 'in_progress')}
                                 className="text-xs"
                                 disabled={!onDuty}
+                                title={onDuty ? undefined : 'Start your shift first'}
                               >
                                 Start Job
                               </Button>
@@ -213,40 +190,41 @@ const ServiceManDashboard = () => {
               <CardTitle>Quick Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 className="w-full justify-start"
-                disabled={!onDuty || assignedIssues.filter(i => i.status === 'acknowledged').length === 0}
+                disabled={!onDuty || !nextJob}
+                onClick={() => nextJob && handleStatusUpdate(nextJob.id, 'in_progress')}
               >
                 <Hammer className="h-4 w-4 mr-2" />
                 Start Next Job
               </Button>
-              <Button variant="outline" className="w-full justify-start">
-                <Camera className="h-4 w-4 mr-2" />
-                Upload Photo
+              <Button variant="outline" className="w-full justify-start" asChild>
+                <Link to="/report">
+                  <AlertCircle className="h-4 w-4 mr-2" />
+                  Report Issue
+                </Link>
               </Button>
-              <Button variant="outline" className="w-full justify-start">
-                <AlertCircle className="h-4 w-4 mr-2" />
-                Report Issue
+              <Button variant="outline" className="w-full justify-start" asChild>
+                <Link to="/map">
+                  <MapPin className="h-4 w-4 mr-2" />
+                  View on Map
+                </Link>
               </Button>
-              <Button variant="outline" className="w-full justify-start">
-                <MapPin className="h-4 w-4 mr-2" />
-                View on Map
-              </Button>
-              
+
               <div className="pt-4 border-t">
-                <h4 className="text-sm font-medium mb-2">Today's Summary</h4>
+                <h4 className="text-sm font-medium mb-2">Summary</h4>
                 <div className="space-y-2 text-xs text-gray-600">
                   <div className="flex justify-between">
-                    <span>Jobs assigned:</span>
-                    <span>{todayIssues.length}</span>
+                    <span>Open jobs:</span>
+                    <span>{openJobs.length}</span>
                   </div>
                   <div className="flex justify-between">
                     <span>In progress:</span>
                     <span>{stats.inProgress}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>Completed:</span>
+                    <span>Completed this week:</span>
                     <span>{stats.resolvedThisWeek}</span>
                   </div>
                 </div>
@@ -260,5 +238,3 @@ const ServiceManDashboard = () => {
 }
 
 export default ServiceManDashboard
-
-
